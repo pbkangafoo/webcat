@@ -13,4 +13,4 @@ For starting a scan on a certain target just displaying found files:
 
 ## Screenshot
 
-![Screenshot](https://github.com/pbkangafoo/webcat/blob/main/webcat_screenshot.JPG "webcat screenshot")
+![Screenshot](https://github.com/pbkangafoo/webcat/blob/main/webcat_screenshot.jpg "webcat screenshot")
