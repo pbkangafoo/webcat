@@ -3,16 +3,11 @@
 
 """
 
-   						  ___.                  __.   
-			__  _  __ ____\_ |__   ____ _____ _/  |_ 
-			\ \/ \/ // __ \| __ \_/ ___\\__  \\   __\
-			 \     /\  ___/| \_\ \  \___ / __ \|  |  
-			  \/\_/  \___  >___  /\___  >____  /__|  
-						 \/    \/     \/     \/  
+	=^.^= WEBCAT =^.^=
 
-		webcat is a simple website scanner for interesting
-		files / directories. webcat was written while attending
-		a pentesting class, therefore it's really quite simple.
+	webcat is a simple website scanner for interesting
+	files / directories. webcat was written while attending
+	a pentesting class, therefore it's really quite simple.
 		
         Version: 0.2
             + cleanup
