@@ -94,7 +94,12 @@ def scantarget(host):
     scan for a given file or directory on host and print result
     
     """
-    user_agent = {'User-agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0'}
+    user_agent = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.8',
+                    'Accept-Encoding': 'gzip'
+        }
     scan = requests.get(host, headers=user_agent)
     if ( scan.status_code == 200 ):
         print("[200] "+host)
@@ -103,7 +108,7 @@ def scantarget(host):
             print("["+str(scan.status_code)+"] "+host)
 	
 if __name__=="__main__":
-    parser = argparse.ArgumentParser("%prog [options] arg1 arg2")
+    parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--target", dest="target",default="",help="specify the target host e.g. http://www.google.de")
     parser.add_argument("-f", "--file", dest="file",default="",help="specify the filename with files and directories to scan for")
     parser.add_argument("-v", "--verbose",dest="verbose_switch",default=False, action="store_true",help="show all results")
