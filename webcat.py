@@ -8,7 +8,11 @@
 	webcat is a simple website scanner for interesting
 	files / directories. webcat was written while attending
 	a pentesting class, therefore it's really quite simple.
-		
+    
+    
+        Version: 0.3
+            + added status filter
+            + header changed for avoiding filters
         Version: 0.2
             + cleanup
         Version: 0.1
@@ -86,7 +90,7 @@ def createlist(myfile,mytarget):
         
     
     
-def scantarget(host):
+def scantarget(host,status_filter):
     """
     
     scantarget(string) -> no return
@@ -101,10 +105,10 @@ def scantarget(host):
                     'Accept-Encoding': 'gzip'
         }
     scan = requests.get(host, headers=user_agent)
-    if ( scan.status_code == 200 ):
-        print("[200] "+host)
-    else: #when verbose mode is enabled, print every result
-        if (verb):
+    if (verb):
+        print("["+str(scan.status_code)+"] "+host)
+    else:
+        if scan.status_code in status_filter:
             print("["+str(scan.status_code)+"] "+host)
 	
 if __name__=="__main__":
@@ -112,6 +116,7 @@ if __name__=="__main__":
     parser.add_argument("-t", "--target", dest="target",default="",help="specify the target host e.g. http://www.google.de")
     parser.add_argument("-f", "--file", dest="file",default="",help="specify the filename with files and directories to scan for")
     parser.add_argument("-v", "--verbose",dest="verbose_switch",default=False, action="store_true",help="show all results")
+    parser.add_argument("-d", "--display",dest="display_list",default=[200],nargs='+', type=int,help="display just certain status codes")
     options = parser.parse_args()
     if len(sys.argv) < 2:
         printhelp()
@@ -120,7 +125,8 @@ if __name__=="__main__":
         target = options.target
         file = options.file
         verb = options.verbose_switch
+        filter_list = options.display_list
         infoheader()
         listtoscan = createlist(file,target)
         for scanitem in listtoscan:
-            scantarget(scanitem)
+            scantarget(scanitem,filter_list)
