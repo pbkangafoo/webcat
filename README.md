@@ -1,5 +1,5 @@
 # -WEBCAT-
-![Logo](https://github.com/pbkangafoo/webcat/blob/main/webcat_git.png "webcat logo")
+![Logo](https://github.com/pbkangafoo/webcat/blob/main/img/webcat_git.png "webcat logo")
 
 **WEBCAT** is a powerful multithreaded web directory and file scanner designed to help security professionals and enthusiasts discover interesting resources on web servers. It combines traditional fuzzing techniques with OWASP Web Security Testing Guide (WSTG)-inspired checks to deliver comprehensive reconnaissance capabilities in a lightweight, easy-to-use tool.
 
@@ -21,7 +21,7 @@ Version: 0.9
 ---
 ## 🔍 Screenshot
 
-![Screenshot](https://github.com/pbkangafoo/webcat/blob/main/webcat_screenshot.jpg "webcat screenshot")
+![Screenshot](https://github.com/pbkangafoo/webcat/blob/main/img/webcat_screenshot.jpg "webcat screenshot")
 
 ---
 
