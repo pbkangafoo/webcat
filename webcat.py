@@ -4,12 +4,12 @@
 """
 =^.^= WEBCAT =^.^=
 
-WEBCAT EXTENDED is a multithreaded website scanner designed to discover interesting files and directories using 
+WEBCAT is a multithreaded website scanner designed to discover interesting files and directories using 
 customizable wordlists. It supports HTTP method enumeration, security header analysis, sensitive file detection, 
 and TLS certificate inspection, enabling security-focused assessments inspired by the OWASP Web Security Testing Guide. 
 The tool provides flexible output options and concurrency controls to efficiently scan target web applications.
 
-Version: 0.8
+Version: 0.9
 
 Core features:
 - Multithreaded scanning of web directories and files using customizable wordlists
@@ -20,6 +20,7 @@ Core features:
 - TLS certificate information retrieval for HTTPS targets (issuer and expiry)
 - Flexible output to console and tab-separated output file with detailed scan results
 - Optional activation of advanced OWASP WSTG-inspired security tests
+- Proxy support
 
 Webcat features with optional OWASP WSTG-inspired features:
 - Directory & file fuzzing
@@ -38,6 +39,7 @@ import os
 import ssl
 import socket
 import requests
+import urllib3
 from datetime import datetime
 from urllib.parse import urlparse
 from threading import Thread, Lock
@@ -46,6 +48,12 @@ from queue import Queue
 # Global lock for writing to file
 write_lock = Lock()
 queue = Queue()
+
+# Track certificate warnings so self-signed certificates are reported once per host
+ssl_warning_hosts = set()
+
+# We print our own explicit warning before retrying without certificate verification.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Sensitive file patterns (Top 20 common sensitive files and directories)
 SENSITIVE_PATHS = [
@@ -91,18 +99,18 @@ def infoheader():
     """
     clear()
     print("=^.^= WEBCAT =^.^=")
-    print("-" * 50)
+    print("-" * 60)
     print(f"->>  Target URL     : {options.url}")
     print(f"->>  Wordlist       : {options.file}")
     print(f"->>  Status Filter  : {', '.join(map(str, options.display_list))}")
     if options.output_file:
         print(f"->>  Output File    : {options.output_file}")
-    if options.extra_checks:
-        print(f"->>  OWASP WSTG Checks: enabled")
-    else:
-        print(f"->>  OWASP WSTG Checks: disabled")
+    print(f"->>  Extra Checks   : {'enabled' if options.extra_checks else 'disabled'}")
+    print(f"->>  Check OPTIONS  : {'enabled' if options.check_options else 'disabled'} (legacy)")
+    if options.proxy:
+        print(f"->>  Proxy          : {options.proxy}")
     print(f"->>  Threads        : {options.threads}")
-    print("-" * 50)
+    print("-" * 60)
 
 def printhelp():
     """
@@ -115,6 +123,62 @@ def printhelp():
     clear()
     print("=^.^= WEBCAT =^.^=")
     parser.print_help()
+
+def get_proxies() -> dict or None:
+    """
+    Build proxies dict for requests if proxy option provided.
+
+    Called as: get_proxies()
+    Input: None (uses global options.proxy)
+    Output: dict or None
+    """
+    if options.proxy:
+        # Use http proxy for both http and https (HTTP(S) proxy)
+        return {
+            "http": f"http://{options.proxy}",
+            "https": f"http://{options.proxy}"
+        }
+    return None
+
+
+def warn_ssl_and_continue(url: str, error: Exception):
+    """
+    Print a warning once per host when TLS certificate verification fails.
+
+    Called as: warn_ssl_and_continue("https://example.com", error)
+    Input:
+      url (str)
+      error (Exception)
+    Output: None (prints warning to stdout)
+    """
+    parsed = urlparse(url)
+    host = parsed.hostname or url
+    with write_lock:
+        if host not in ssl_warning_hosts:
+            ssl_warning_hosts.add(host)
+            print(f"[SSL WARNING] Certificate verification failed for {host}: {error}")
+            print("[SSL WARNING] Continuing scan with certificate verification disabled for this request.")
+
+
+def request_with_ssl_warning(method: str, url: str, **kwargs) -> requests.Response:
+    """
+    Perform an HTTP request. If certificate verification fails, warn and retry with verify=False.
+
+    Called as: request_with_ssl_warning("GET", "https://example.com", timeout=5)
+    Input:
+      method (str): HTTP method
+      url (str): target URL
+      **kwargs: passed through to requests.request
+    Output:
+      requests.Response
+    """
+    try:
+        return requests.request(method, url, **kwargs)
+    except requests.exceptions.SSLError as e:
+        warn_ssl_and_continue(url, e)
+        retry_kwargs = dict(kwargs)
+        retry_kwargs["verify"] = False
+        return requests.request(method, url, **retry_kwargs)
 
 def createlist(myfile: str, mytarget: str) -> list:
     """
@@ -142,10 +206,10 @@ def list_supported_methods(url: str) -> list or None:
       list of HTTP methods (list of str) or None if no Allow header or error
     """
     try:
-        response = requests.options(url, timeout=5)
-        allow = response.headers.get("Allow")
+        resp = request_with_ssl_warning("OPTIONS", url, timeout=5, proxies=get_proxies())
+        allow = resp.headers.get("Allow")
         if allow:
-            return [method.strip() for method in allow.split(",")]
+            return [m.strip() for m in allow.split(",")]
     except requests.RequestException:
         pass
     return None
@@ -156,7 +220,7 @@ def is_likely_directory(url: str) -> bool:
 
     Called as: is_likely_directory("https://example.com/backup/")
     Input:
-      url (str): URL to check
+      url (str)
     Output:
       True if URL looks like a directory, False otherwise (bool)
     """
@@ -170,30 +234,30 @@ def is_sensitive_path(url: str) -> bool:
 
     Called as: is_sensitive_path("https://example.com/.git")
     Input:
-      url (str): URL to check
+      url (str)
     Output:
       True if sensitive pattern found, False otherwise (bool)
     """
-    lower_path = url.lower()
-    return any(sens.lower() in lower_path for sens in SENSITIVE_PATHS)
+    lower = url.lower()
+    return any(sens.lower() in lower for sens in SENSITIVE_PATHS)
 
 def analyze_security_headers(response: requests.Response) -> list:
     """
     Check for missing important security headers in HTTP response.
 
-    Called as: analyze_security_headers(response_object)
+    Called as: analyze_security_headers(response_obj)
     Input:
-      response (requests.Response): HTTP response object
+      response (requests.Response)
     Output:
       list of missing header names (list of str), empty if all present
     """
-    required_headers = [
+    required = [
         "Content-Security-Policy",
         "X-Frame-Options",
         "Strict-Transport-Security",
         "X-Content-Type-Options"
     ]
-    missing = [h for h in required_headers if h not in response.headers]
+    missing = [h for h in required if h not in response.headers]
     return missing
 
 def get_tls_info(target_url: str) -> dict or None:
@@ -202,59 +266,93 @@ def get_tls_info(target_url: str) -> dict or None:
 
     Called as: get_tls_info("https://example.com")
     Input:
-      target_url (str): base URL (must start with https://)
+      target_url (str) - must start with https://
     Output:
-      dict with keys 'issuer' and 'expires' (str), or None if not HTTPS or error
+      dict with keys 'issuer' and 'expires' (str) or None if not HTTPS/error
     """
     parsed = urlparse(target_url)
     if parsed.scheme != "https":
         return None
     host = parsed.hostname
     port = parsed.port or 443
+    def read_certificate(ctx):
+        with socket.create_connection((host, port), timeout=5) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                return ssock.getpeercert()
+
     try:
         ctx = ssl.create_default_context()
-        with socket.create_connection((host, port)) as sock:
-            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
-                cert = ssock.getpeercert()
-                issuer = dict(x[0] for x in cert['issuer'])
-                issued_by = issuer.get('organizationName', issuer.get('commonName', 'Unknown'))
-                not_after = datetime.strptime(cert['notAfter'], "%b %d %H:%M:%S %Y %Z")
-                return {
-                    "issuer": issued_by,
-                    "expires": not_after.strftime("%Y-%m-%d")
-                }
+        try:
+            cert = read_certificate(ctx)
+        except ssl.SSLCertVerificationError as e:
+            warn_ssl_and_continue(target_url, e)
+            unverified_ctx = ssl._create_unverified_context()
+            cert = read_certificate(unverified_ctx)
+
+        issuer = dict(x[0] for x in cert.get('issuer', ()))
+        issued_by = issuer.get('organizationName', issuer.get('commonName', 'Unknown'))
+        not_after = cert.get('notAfter')
+        # Parse notAfter; if format unexpected, return raw string
+        try:
+            expires_dt = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
+            expires = expires_dt.strftime("%Y-%m-%d")
+        except Exception:
+            expires = str(not_after)
+        return {"issuer": issued_by, "expires": expires}
     except Exception:
+        return None
+
+def get_server_header(base_url: str) -> str or None:
+    """
+    Retrieve the Server header from the base URL (single check).
+
+    Called as: get_server_header("https://example.com") when extra_checks enabled.
+    Input:
+      base_url (str)
+    Output:
+      Server header string or None
+    """
+    try:
+        resp = request_with_ssl_warning("GET", base_url, timeout=5, proxies=get_proxies())
+        server = resp.headers.get("Server")
+        if server:
+            print(f"[WSTG] Server header for {base_url}: {server}")
+            return server
+        else:
+            print(f"[WSTG] No Server header for {base_url}")
+            return None
+    except requests.RequestException as e:
+        print(f"[WSTG] Could not retrieve Server header for {base_url}: {e}")
         return None
 
 def worker():
     """
     Thread worker function to scan each URL in the queue.
 
-    Called as: runs inside threading.Thread target, no args
-    Input:
-      None (fetches URL from global queue)
-    Output:
-      None
+    Called as: runs inside threading.Thread target
+    Input: None (fetches URL from global queue)
+    Output: None
     """
     while True:
         url = queue.get()
         if url is None:
             break
-        scantarget(url, options.display_list, options.extra_checks, options.output_file)
+        scantarget(url, options.display_list, options.check_options, options.extra_checks, options.output_file)
         queue.task_done()
 
-def scantarget(url: str, status_filter: list, extra_checks: bool, output_file: str or None):
+def scantarget(url: str, status_filter: list, check_options: bool, extra_checks: bool, output_file: str or None):
     """
     Perform GET request, optionally perform extra OWASP WSTG checks, and write results.
 
-    Called as: scantarget("https://example.com/backup", [200], True, "results.txt")
+    Called as: scantarget("https://example.com/backup", [200], True, True, "results.txt")
     Input:
-      url (str): URL to scan
-      status_filter (list of int): HTTP status codes to display
-      extra_checks (bool): whether to perform OWASP extra tests
-      output_file (str or None): output file path, or None to disable file output
+      url (str)
+      status_filter (list of int)
+      check_options (bool) - legacy OPTIONS check behavior
+      extra_checks (bool) - run full WSTG-inspired checks
+      output_file (str|None)
     Output:
-      None (prints to stdout and optionally writes to file)
+      None (prints to stdout and writes to file if specified)
     """
     user_agent = {
         'User-Agent': 'Mozilla/5.0',
@@ -264,8 +362,8 @@ def scantarget(url: str, status_filter: list, extra_checks: bool, output_file: s
     }
 
     try:
-        response = requests.get(url, headers=user_agent, timeout=5)
-        code = response.status_code
+        resp = request_with_ssl_warning("GET", url, headers=user_agent, timeout=5, proxies=get_proxies())
+        code = resp.status_code
         show = options.verbose_switch or code in status_filter
 
         methods = None
@@ -273,15 +371,13 @@ def scantarget(url: str, status_filter: list, extra_checks: bool, output_file: s
         sensitive = False
 
         if extra_checks:
-            # Always check methods (OPTIONS)
+            # full mode: always try OPTIONS and header analysis and sensitive check
             methods = list_supported_methods(url)
-            # Check security headers
-            missing_headers = analyze_security_headers(response)
-            # Check sensitive files/paths
+            missing_headers = analyze_security_headers(resp)
             sensitive = is_sensitive_path(url)
         else:
-            # Old behavior: only check OPTIONS if -check-opt set and is directory
-            if options.check_options and is_likely_directory(url):
+            # legacy behavior: only do OPTIONS if user explicitly asked and URL likely directory
+            if check_options and is_likely_directory(url):
                 methods = list_supported_methods(url)
 
         if show:
@@ -303,18 +399,18 @@ def scantarget(url: str, status_filter: list, extra_checks: bool, output_file: s
                         ",".join(missing_headers) if missing_headers else "",
                         "Sensitive" if sensitive else ""
                     ]
-                    # Append TLS info only for base URL and only if extra_checks enabled
+                    # Append TLS info only for base URL and only if extra_checks enabled and TLS_INFO available
                     if extra_checks and url.rstrip('/') == options.url.rstrip('/') and TLS_INFO:
-                        parts.append(f"TLS Issuer: {TLS_INFO['issuer']}, Expires: {TLS_INFO['expires']}")
+                        parts.append(f"TLS Issuer: {TLS_INFO.get('issuer','')}, Expires: {TLS_INFO.get('expires','')}")
                     f.write("\t".join(parts) + "\n")
 
     except KeyboardInterrupt:
         sys.exit(0)
     except Exception:
-        pass  # optionally log errors
+        pass  # silently ignore network errors (could be extended to logging)
 
 # Argument parsing
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description="WEBCAT - simple threaded website scanner with optional WSTG checks")
 parser.add_argument("-u", "--url", dest="url", required=True,
                     help="Specify the target URL (e.g. https://example.com)")
 parser.add_argument("-f", "--file", dest="file", required=True,
@@ -326,27 +422,72 @@ parser.add_argument("-d", "--display", dest="display_list", default=[200],
 parser.add_argument("--check-opt", dest="check_options", default=False,
                     action="store_true", help="Check supported HTTP methods via OPTIONS request (legacy)")
 parser.add_argument("-o", "--output", dest="output_file", default=None,
-                    help="Output results to file (tab-separated URL, status code, methods, missing headers, sensitive flag, TLS info)")
+                    help="Output results to file (tab-separated URL,status,methods,missing_headers,sensitive,TLS)")
 parser.add_argument("-t", "--threads", dest="threads", default=10, type=int,
                     help="Number of concurrent threads (default: 10)")
 parser.add_argument("-x", "--extra-checks", dest="extra_checks", default=False,
-                    action="store_true", help="Enable extra OWASP WSTG inspired checks")
+                    action="store_true", help="Perform additional OWASP WSTG-inspired checks")
+parser.add_argument("-p", "--proxy", dest="proxy", default=None,
+                    help="Use a proxy for all HTTP/HTTPS requests (format: ip:port)")
 
 options = parser.parse_args()
 
+def validate_options(opts):
+    """
+    Validate input options for correctness.
+
+    Called as: validate_options(options)
+    Input:
+      opts (argparse.Namespace)
+    Output:
+      None (exits with parser.error on invalid options)
+    """
+    parsed = urlparse(opts.url)
+    if parsed.scheme not in ("http", "https"):
+        parser.error("URL must start with http:// or https://")
+    if not os.path.isfile(opts.file):
+        parser.error(f"Wordlist file '{opts.file}' does not exist.")
+    for code in opts.display_list:
+        if not (100 <= code <= 599):
+            parser.error(f"Invalid HTTP status code: {code}")
+    if opts.threads <= 0:
+        parser.error("Threads must be greater than 0.")
+    if opts.proxy:
+        if ":" not in opts.proxy:
+            parser.error("Proxy must be in format ip:port")
+
+# TLS info placeholder (will be set in main if extra_checks)
 TLS_INFO = None
+
 def main():
+    """
+    Main execution function.
+
+    Called as: main()
+    Input: None (uses global options)
+    Output: None
+    """
     global TLS_INFO
+
+    # Validate CLI options first
+    validate_options(options)
+
+    # If extra checks enabled, get TLS info for base URL once
+    if options.extra_checks:
+        TLS_INFO = get_tls_info(options.url)
+
+    # Print header
     infoheader()
+
+    # If extra checks enabled, do single Server header check for base URL
+    if options.extra_checks:
+        get_server_header(options.url)
+
     try:
         targets = createlist(options.file, options.url)
         if options.output_file:
-            open(options.output_file, "w").close()  # clear output file
-
-        # If extra checks enabled, get TLS info for base URL once
-        if options.extra_checks:
-            TLS_INFO = get_tls_info(options.url)
-
+            # clear/initialize output file
+            open(options.output_file, "w").close()
         for item in targets:
             queue.put(item)
 
