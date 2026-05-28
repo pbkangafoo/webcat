@@ -4,6 +4,7 @@
 """
 =^.^= WEBCAT =^.^=
 
+<<<<<<< Updated upstream
 WEBCAT is a multithreaded website scanner designed to discover interesting files and directories using 
 customizable wordlists. It supports HTTP method enumeration, security header analysis, sensitive file detection, 
 and TLS certificate inspection, enabling security-focused assessments inspired by the OWASP Web Security Testing Guide. 
@@ -31,6 +32,13 @@ Webcat features with optional OWASP WSTG-inspired features:
 - Consolidated output to file with all scan results
 
 Author: Peter "kangafoo" Bartels, https://www.kangafoo.de
+=======
+webcat is a simple threaded website scanner for interesting
+files / directories with support for method detection.
+
+Written by Peter Bartels (https://www.kangafoo.de)
+Modified and extended with threading, output options and heuristics
+>>>>>>> Stashed changes
 """
 
 import sys
@@ -39,15 +47,19 @@ import os
 import ssl
 import socket
 import requests
+<<<<<<< Updated upstream
 import urllib3
 from datetime import datetime
 from urllib.parse import urlparse
+=======
+>>>>>>> Stashed changes
 from threading import Thread, Lock
 from queue import Queue
 
 # Global lock for writing to file
 write_lock = Lock()
 queue = Queue()
+<<<<<<< Updated upstream
 
 # Track certificate warnings so self-signed certificates are reported once per host
 ssl_warning_hosts = set()
@@ -100,11 +112,24 @@ def infoheader():
     clear()
     print("=^.^= WEBCAT =^.^=")
     print("-" * 60)
+=======
+
+def clear():
+    """Clear screen for Linux and Windows."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+def infoheader():
+    """Print header with scan settings."""
+    clear()
+    print("=^.^= WEBCAT =^.^=")
+    print("-" * 50)
+>>>>>>> Stashed changes
     print(f"->>  Target URL     : {options.url}")
     print(f"->>  Wordlist       : {options.file}")
     print(f"->>  Status Filter  : {', '.join(map(str, options.display_list))}")
     if options.output_file:
         print(f"->>  Output File    : {options.output_file}")
+<<<<<<< Updated upstream
     print(f"->>  Extra Checks   : {'enabled' if options.extra_checks else 'disabled'}")
     print(f"->>  Check OPTIONS  : {'enabled' if options.check_options else 'disabled'} (legacy)")
     if options.proxy:
@@ -120,10 +145,20 @@ def printhelp():
     Input: None
     Output: None (prints help to stdout)
     """
+=======
+    if options.check_options:
+        print(f"->>  Check OPTIONS  : enabled")
+    print(f"->>  Threads        : {options.threads}")
+    print("-" * 50)
+
+def printhelp():
+    """Print help and header if no arguments are given."""
+>>>>>>> Stashed changes
     clear()
     print("=^.^= WEBCAT =^.^=")
     parser.print_help()
 
+<<<<<<< Updated upstream
 def get_proxies() -> dict or None:
     """
     Build proxies dict for requests if proxy option provided.
@@ -139,8 +174,26 @@ def get_proxies() -> dict or None:
             "https": f"http://{options.proxy}"
         }
     return None
+=======
+def createlist(myfile, mytarget):
+    """Read wordlist and combine with base URL."""
+    with open(myfile, "r") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    return [mytarget.rstrip("/") + "/" + line.lstrip("/") for line in lines]
+>>>>>>> Stashed changes
 
+def list_supported_methods(url):
+    """Send OPTIONS request and return supported methods."""
+    try:
+        response = requests.options(url, timeout=5)
+        allow = response.headers.get("Allow")
+        if allow:
+            return [method.strip() for method in allow.split(",")]
+    except requests.RequestException:
+        pass
+    return None
 
+<<<<<<< Updated upstream
 def warn_ssl_and_continue(url: str, error: Exception):
     """
     Print a warning once per host when TLS certificate verification fails.
@@ -224,10 +277,15 @@ def is_likely_directory(url: str) -> bool:
     Output:
       True if URL looks like a directory, False otherwise (bool)
     """
+=======
+def is_likely_directory(url):
+    """Heuristically determine if the URL is a directory based on path."""
+>>>>>>> Stashed changes
     path = url.split('?')[0].split('#')[0]
     last_part = path.rstrip('/').split('/')[-1]
     return '.' not in last_part
 
+<<<<<<< Updated upstream
 def is_sensitive_path(url: str) -> bool:
     """
     Check if URL path contains sensitive file or folder names.
@@ -333,10 +391,15 @@ def worker():
     Input: None (fetches URL from global queue)
     Output: None
     """
+=======
+def worker():
+    """Thread worker function to scan each URL in the queue."""
+>>>>>>> Stashed changes
     while True:
         url = queue.get()
         if url is None:
             break
+<<<<<<< Updated upstream
         scantarget(url, options.display_list, options.check_options, options.extra_checks, options.output_file)
         queue.task_done()
 
@@ -354,6 +417,13 @@ def scantarget(url: str, status_filter: list, check_options: bool, extra_checks:
     Output:
       None (prints to stdout and writes to file if specified)
     """
+=======
+        scantarget(url, options.display_list, options.check_options, options.output_file)
+        queue.task_done()
+
+def scantarget(url, status_filter, check_options, output_file):
+    """Perform GET request, optionally check OPTIONS, and write results."""
+>>>>>>> Stashed changes
     user_agent = {
         'User-Agent': 'Mozilla/5.0',
         'Accept': '*/*',
@@ -362,6 +432,7 @@ def scantarget(url: str, status_filter: list, check_options: bool, extra_checks:
     }
 
     try:
+<<<<<<< Updated upstream
         resp = request_with_ssl_warning("GET", url, headers=user_agent, timeout=5, proxies=get_proxies())
         code = resp.status_code
         show = options.verbose_switch or code in status_filter
@@ -379,19 +450,34 @@ def scantarget(url: str, status_filter: list, check_options: bool, extra_checks:
             # legacy behavior: only do OPTIONS if user explicitly asked and URL likely directory
             if check_options and is_likely_directory(url):
                 methods = list_supported_methods(url)
+=======
+        response = requests.get(url, headers=user_agent, timeout=5)
+        code = response.status_code
+        show = options.verbose_switch or code in status_filter
+
+        methods = None
+        if check_options and is_likely_directory(url):
+            methods = list_supported_methods(url)
+>>>>>>> Stashed changes
 
         if show:
             print(f"[{code}] {url}")
             if methods:
                 print(f"    --> Supported Methods: {', '.join(methods)}")
+<<<<<<< Updated upstream
             if missing_headers:
                 print(f"    --> Missing Security Headers: {', '.join(missing_headers)}")
             if sensitive:
                 print(f"    --> [!] Sensitive Path Detected")
+=======
+            elif check_options:
+                print(f"    --> No Allow header found.")
+>>>>>>> Stashed changes
 
         if output_file and show:
             with write_lock:
                 with open(output_file, "a") as f:
+<<<<<<< Updated upstream
                     parts = [
                         url,
                         str(code),
@@ -403,14 +489,27 @@ def scantarget(url: str, status_filter: list, check_options: bool, extra_checks:
                     if extra_checks and url.rstrip('/') == options.url.rstrip('/') and TLS_INFO:
                         parts.append(f"TLS Issuer: {TLS_INFO.get('issuer','')}, Expires: {TLS_INFO.get('expires','')}")
                     f.write("\t".join(parts) + "\n")
+=======
+                    if methods:
+                        f.write(f"{url}\t{', '.join(methods)}\n")
+                    else:
+                        f.write(f"{url}\n")
+>>>>>>> Stashed changes
 
     except KeyboardInterrupt:
         sys.exit(0)
     except Exception:
+<<<<<<< Updated upstream
         pass  # silently ignore network errors (could be extended to logging)
 
 # Argument parsing
 parser = argparse.ArgumentParser(description="WEBCAT - simple threaded website scanner with optional WSTG checks")
+=======
+        pass  # optionally log errors
+
+# Argument parsing
+parser = argparse.ArgumentParser()
+>>>>>>> Stashed changes
 parser.add_argument("-u", "--url", dest="url", required=True,
                     help="Specify the target URL (e.g. https://example.com)")
 parser.add_argument("-f", "--file", dest="file", required=True,
@@ -420,6 +519,7 @@ parser.add_argument("-v", "--verbose", dest="verbose_switch", default=False,
 parser.add_argument("-d", "--display", dest="display_list", default=[200],
                     nargs='+', type=int, help="Filter output by status codes")
 parser.add_argument("--check-opt", dest="check_options", default=False,
+<<<<<<< Updated upstream
                     action="store_true", help="Check supported HTTP methods via OPTIONS request (legacy)")
 parser.add_argument("-o", "--output", dest="output_file", default=None,
                     help="Output results to file (tab-separated URL,status,methods,missing_headers,sensitive,TLS)")
@@ -488,6 +588,22 @@ def main():
         if options.output_file:
             # clear/initialize output file
             open(options.output_file, "w").close()
+=======
+                    action="store_true", help="Check supported HTTP methods via OPTIONS request")
+parser.add_argument("-o", "--output", dest="output_file", default=None,
+                    help="Output results to file (tab-separated URL + methods)")
+parser.add_argument("-t", "--threads", dest="threads", default=10, type=int,
+                    help="Number of concurrent threads (default: 10)")
+
+options = parser.parse_args()
+
+def main():
+    infoheader()
+    try:
+        targets = createlist(options.file, options.url)
+        if options.output_file:
+            open(options.output_file, "w").close()  # clear output file
+>>>>>>> Stashed changes
         for item in targets:
             queue.put(item)
 
