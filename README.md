@@ -38,10 +38,22 @@ Download SecLists or any other custom wordlist and pass it to the tool using the
 This tool requires Python 3 and the [requests](https://pypi.org/project/requests/) library. To install `requests`, run:
 
 ```bash
-pip install requests
+pip3 install requests
 ```
 
-After cloning or downloading this repository, you can run the tool directly using Python.
+On some distributions you might need to install the library using apt:
+```bash
+sudo apt install python3-requests
+```
+
+Now you can download and install webcat to make it run from anywhere for your user account:
+
+```bash
+git clone https://github.com/pbkangafoo/webcat.git
+cd webcat
+chmod +x webcat.py
+sudo ln -s /path/to/webcat.py /usr/local/bin/webcat
+```
 
 ---
 
